@@ -8,41 +8,41 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
+# Intro
 
-## Pendahuluan
-
-### Library
+## Calling the Libraries
 
 ```{r}
-library(factoextra)  #Mengaplikasikan algoritma clustering kmeans
+library(factoextra)
 library(cluster)
 library(ppclust)
-library(fclust) #Mengaplikasikan algoritma clustering
-library(ggplot2) #Memvisualisasikan data yang dimiliki
-library(dplyr) #Manipulasi data
-library(broom) #Manipulasi data, statistical objects into tibbles
-library(ggdendro) #Memvisualisasikan dendogram
-library(readxl) #Membaca file excel
-library(fmsb) #Memvisualisasikan radar chart
-library(NbClust) #Optimum number of Cluster
-library(RColorBrewer) #Visualisasi Warna di R
+library(clusterSim)
+library(REdaS)
+library(fclust)
+library(ggplot2)
+library(dplyr)
+library(broom)
+library(ggdendro)
+library(readxl)
+library(fmsb)
+library(NbClust)
+library(RColorBrewer)
 library(gridExtra)
 library(robustHD)
 library(clValid)
 library(dendextend)
-library(psych)  #Tools untuk mendeteksi multikol
+library(psych)
 ```
 
-##Membuka Data
-
+## Importing the Data
 
 ```{r}
 data <- read_excel("Statistik Kriminal Weighted.xlsx")
 View(data)
 data <- as.data.frame(data)
 rownames(data) <- data$Polda
-colnames(data) <- c('Daerah', 'murder', 'assault', 'rape', 'abduction', 'theftv', 'theftwv', 'drugs', 'fnc', 'capo')
-data <- data[-35,-1] ##row 1(nama prov) engga dipake
+colnames(data) <- c('Daerah', 'murder', 'assault', 'rape', 'abduction', 'theftv', 'theftwv', 'drugs', 'fnc', 'capo')  ## renaming the variables
+data <- data[-35,-1] ## dropping row 1 (Provinsi)
 head(data)
 ```
 
@@ -52,82 +52,100 @@ plot(data)
 ```
 
 ```{r}
-boxplot(data)
-```
-## Scaling Data Frame
-
-```{r}
-data <- scale(data)
-boxplot(data)
-```
-
-```{r}
+boxplot(data) ## data needn't to be scaled as the variables are measured in the similar way
 data <- as.data.frame(data)
 ```
 
 ```{r}
 par(mfrow=c(3,3))
-hist(data[,1], main = "Total Murder")
-hist(data[,2], main = "Total Assault")
-hist(data[,3], main = "Total Rape")
-hist(data[,4], main = "Total Abduction")
-hist(data[,5], main = "Total Theft With Violence")
-hist(data[,6], main = "Total Theft Without Violence")
-hist(data[,7], main = "Total Drugs Crime")
-hist(data[,8], main = "Total Fraud and Corruption Crime")
-hist(data[,9], main = "Total Crime Against Public Orders")
-```
-#Validasi internal dan Pemilihan Jumlah Cluster
-
-##Uji KMO untuk Kecukupan Sampel
-```{r}
-KMO(data)
-```
-## Uji Tes Bartlett untuk Multikolinearitas
-```{r}
-data <- as.data.frame(data)
-bartlett.test(data)
+hist(data[,1], main = "Murder")
+hist(data[,2], main = "Assault")
+hist(data[,3], main = "Rape")
+hist(data[,4], main = "Abduction")
+hist(data[,5], main = "Theft With Violence")
+hist(data[,6], main = "Theft Without Violence")
+hist(data[,7], main = "Drugs Crime")
+hist(data[,8], main = "Fraud and Corruption Crime")
+hist(data[,9], main = "Crime Against Public Orders")
 ```
 
+# Preparing the Data
 
-##clValid untuk Validitas Internal
+## KMO Test to Determine the Adequacy of the Data
 ```{r}
-clmethods <- c("hierarchical", "kmeans")
-intern <- clValid(data, nClust = 2:6, clMethods = clmethods, validation ="internal")
+KMOS(data)
+```
+## Bartlett Test of Spherecity to Determine the Multicollinearity
+```{r}
+bart_spher(data)
+```
+
+## Principal Components Analysis
+```{r}
+pca1 <- princomp(data, scores=TRUE, cor=TRUE)
+summary(pca1)
+```
+### Scree Plot of Eigenvalue
+```{r}
+eig <- get_eigenvalue(pca1)
+eig
+fviz_eig(pca1)
+```
+
+
+### Loadings
+```{r}
+loadings(pca1)
+data.pca <- pca1$scores [,1:3]
+head(data.pca)
+```
+
+
+## Internal validation
+```{r}
+intern <- clValid(data.pca, nClust = 2:6, clMethods = c("hierarchical", "kemans","fanny"), validation ="internal")
 summary(intern)
 ```
+
+## Stability Validation
 ```{r}
-stabil <- clValid(data, nClust = 2:6, clMethods = clmethods, validation="stability")
+stabil <- clValid(data.pca, nClust = 2:6, clMethods = c("hierarchical","kmeans"), validation="stability")
 optimalScores(stabil)
 ```
 
-
-
-##Elbow Method untuk Pemilihan Jumlah Cluster Optimal
+## Elbow Method with WSS
 ```{r}
 par(mfrow=c(2,2))
 
 # Elbow method
-fviz_nbclust(data, kmeans, method = "wss") +
-    geom_vline(xintercept = 2, linetype = 3)+
+fviz_nbclust(data.pca, kmeans, method = "wss") +
   labs(subtitle = "Elbow method")
 ```
 
-#Proses Clustering K-Means
+## Silhouette method
+```{r}
+par(mfrow=c(2,2))
 
-## Package Coding
+# Elbow method
+fviz_nbclust(data.pca, kmeans, method = "silhouette") +
+    geom_vline(xintercept = 2, linetype = 3)+
+  labs(subtitle = "Silhouette method")
+```
 
+# K-Means Clustering
+## Clustering Process
 ```{r}
 set.seed(123)
-km_out = kmeans(data, 2)
-fviz_cluster(km_out, data = data)
+km_out = kmeans(data.pca, 2)
+fviz_cluster(km_out, data = data.pca)
 ```
 
+## Attaching the K-Means Result to the Dataset
 ```{r}
-res <- cbind(data, km_out$cluster)
+res <- cbind(data.pca, km_out$cluster)
 head(res)
 ```
-
+## Cluster Characteristics
 ```{r}
 new <- aggregate(res[,-ncol(res)], list(res[,ncol(res)]), mean)
 new
@@ -140,7 +158,7 @@ library(scales)
 # If you remove the 2 first lines, the function compute the max and min of each variable with the available data:
 radarchart( new[,-1], axistype=0 , maxmin=F,
     #custom polygon
-    pcol=colors_border, pfcol=colors_in, plwd=4, plty=1,
+    pcol=colors_border, pfcol=coul, plwd=4, plty=1,
     #custom the grid
     cglcol="grey", cglty=1, axislabcol="black", cglwd=0.8, 
     #custom labels
@@ -148,37 +166,33 @@ radarchart( new[,-1], axistype=0 , maxmin=F,
     )
 
 # Add a legend
-legend(x=0.7, y=1, legend = new$Group.1, bty = "n", pch=20, col=colors_in, text.col = "grey", cex=1.2, pt.cex=3)
+legend(x=0.7, y=1, legend = new$Group.1, bty = "n", pch=20, col=coul, text.col = "grey", cex=1.2, pt.cex=3)
 ```
 ```{r}
 library(RColorBrewer)
-coul <- brewer.pal(3, "Set2")
+coul <- brewer.pal(2, "Set2")
 colors_border <- coul
 library(scales)
-fviz_cluster(km_out, data = data)
+fviz_cluster(km_out, data = data.pca)
 ```
 
 # Hierarchical Clustering
 
-## Package Coding
+## Clustering Process with Four Linkage Method
 
 ```{r}
-hc_complete = hclust(dist(data), method = "complete")
-hc_complete
+hc_complete = hclust(dist(data.pca), method = "complete")
+hc_average = hclust(dist(data.pca), method = "average")
+hc_single = hclust(dist(data.pca), method = "single")
+hc_ward = hclust(dist(data.pca), method = "ward.D")
 ```
 
-##Single Link
+### Agglomerative Coefficient
 ```{r}
-hc_average = hclust(dist(data), method = "average")
-hc_single = hclust(dist(data), method = "single")
-hc_ward = hclust(dist(data), method = "ward.D")
-```
-
-```{r}
-hc1 <- agnes(data, method ="complete")
-hc2 <- agnes(data, method ="single")
-hc3 <- agnes(data, method ="average")
-hc4 <- agnes(data, method ="ward")
+hc1 <- agnes(data.pca, method ="complete")
+hc2 <- agnes(data.pca, method ="single")
+hc3 <- agnes(data.pca, method ="average")
+hc4 <- agnes(data.pca, method ="ward")
 
 hc1$ac
 hc2$ac
@@ -186,7 +200,7 @@ hc3$ac
 hc4$ac
 ```
 
-##Dendogram
+## Dendogram of Each Method
 ```{r}
 plot_complete = ggdendrogram(hc_complete, rotate = FALSE, size = 2) + labs(title = "Complete Linkage") 
 plot_average = ggdendrogram(hc_average, rotate = FALSE, size = 2) + labs(title = "Average Linkage")
@@ -199,46 +213,55 @@ grid.arrange(plot_single)
 grid.arrange(plot_ward)
 ```
 
+### Clustering Result of Single Linkage Method
 ```{r}
-ggdendrogram(hclust(dist(data), method = "ward.D"), 
-             rotate = FALSE, 
-             size = 3) + 
-  labs(title = "Ward Linkage with Scaled Features")
+plot(hc_single, cex=0.6)
+rect.hclust(hc_single, k=2, border = 2:5)
 ```
+
+### Clustering Result of Average Linkage Method
+```{r}
+plot(hc_average, cex=0.6)
+rect.hclust(hc_average, k=2, border = 2:5)
+```
+
+### Clustering Result of Complete Linkage Method
+```{r}
+plot(hc_complete, cex=0.6)
+rect.hclust(hc_complete, k=2, border = 2:5)
+```
+
+### Clustering Result of Ward Method
 ```{r}
 plot(hc_ward, cex=0.6)
 rect.hclust(hc_ward, k=2, border = 2:5)
 ```
 
-
-##
+## Attaching Ward's Result to the Dataset
 ```{r}
 clust <- cutree(hc_ward, 2)
 clust
 ```
 
 ```{r}
-hc_res <- cbind(data,clust)
+hc_res <- cbind(data.pca, clust)
 hc_res
 ```
 
-```{r}
-head(hc_res)
-```
-
+## Cluster Characteristics with Ward's Hierarchical Clustering method
 ```{r}
 new <- aggregate(hc_res[,-ncol(hc_res)], list(hc_res[,ncol(hc_res)]), mean)
 new
 # Set graphic colors
 library(RColorBrewer)
-coul <- brewer.pal(2, "RdBu")
+coul <- brewer.pal(2, "Set2")
 colors_border <- coul
 library(scales)
 
 # If you remove the 2 first lines, the function compute the max and min of each variable with the available data:
 radarchart( new[,-1], axistype=0 , maxmin=F,
     #custom polygon
-    pcol=colors_border, pfcol=colors_in, plwd=4, plty=1,
+    pcol=colors_border, pfcol=coul, plwd=4, plty=1,
     #custom the grid
     cglcol="grey", cglty=1, axislabcol="black", cglwd=0.8, 
     #custom labels
@@ -246,8 +269,47 @@ radarchart( new[,-1], axistype=0 , maxmin=F,
     )
 
 # Add a legend
-legend(x=0.7, y=1, legend = new$Group.1, bty = "n", pch=20, col=colors_in, text.col = "grey", cex=1.2, pt.cex=3)
+legend(x=0.7, y=1, legend = new$Group.1, bty = "n", pch=20, col=coul, text.col = "grey", cex=1.2, pt.cex=3)
 ```
 
+#Fuzzy C-Means Clustering
 
+##Clustering Process
 
+```{r}
+res.fcm <- fcm(data.pca, centers=2)
+as.data.frame(res.fcm$u)[1:34,]
+```
+## Cluster Characteristic with Fuzzy C-Means Clustering
+```{r}
+res.fcm$v0
+```
+
+```{r}
+res.fcm
+```
+## Attaching The Result to the Dataset
+```{r}
+data.fcm <- cbind(data.pca, res.fcm$cluster)
+data.fcm
+```
+
+```{r}
+plotcluster(res.fcm, cp=1, trans=TRUE)
+res.fcm2 <- ppclust2(res.fcm, "fanny")
+fviz_cluster(res.fcm2, data = data.pca, 
+  ellipse.type = "convex",
+  palette = "jco",
+  repel = TRUE)
+```
+
+# Cluster Characteristics with Criminality Variables
+
+```{r}
+clust1 <- data[-c(25,29,31,33,34),]
+summary(clust1)
+```
+```{r}
+clust2 <- data[c(25,29,31,33,34),]
+summary(clust2)
+```
